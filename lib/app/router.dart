@@ -18,6 +18,7 @@ import '../features/notifications/presentation/notifications_view.dart';
 import '../features/settings/presentation/settings_view.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../features/auth/data/auth_repository.dart';
+import '../features/auth/presentation/sign_up_view.dart';
 
 final GlobalKey<NavigatorState> _rootNavigatorKey = GlobalKey<NavigatorState>();
 final GlobalKey<NavigatorState> _shellNavigatorKey = GlobalKey<NavigatorState>();
@@ -90,6 +91,10 @@ final routerProvider = Provider<GoRouter>((ref) {
       GoRoute(
         path: '/auth/mobile',
         builder: (context, state) => const MobileLoginView(),
+      ),
+      GoRoute(
+        path: '/auth/signup',
+        builder: (context, state) => const SignUpView(),
       ),
       GoRoute(
         path: '/auth/otp',

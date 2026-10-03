@@ -10,6 +10,7 @@ import '../data/mock_data.dart';
 import '../data/vehicles_provider.dart';
 import '../domain/vehicle.dart';
 import '../../dealer/domain/dealer.dart';
+import 'package:uuid/uuid.dart';
 
 class AddVehicleFlowView extends ConsumerStatefulWidget {
   const AddVehicleFlowView({super.key});
@@ -218,7 +219,7 @@ class _AddVehicleFlowViewState extends ConsumerState<AddVehicleFlowView> {
     final currentDealer = ref.read(authProvider).currentDealer ?? MockData.currentDealer;
     final now = DateTime.now();
     final newVehicle = Vehicle(
-      id: 'veh-${now.millisecondsSinceEpoch}',
+      id: const Uuid().v4(),
       dealerId: currentDealer.id,
       dealerName: currentDealer.businessName,
       dealerPhone: currentDealer.phone,
@@ -248,10 +249,19 @@ class _AddVehicleFlowViewState extends ConsumerState<AddVehicleFlowView> {
       createdAt: now,
     );
 
-    ref.read(vehiclesProvider.notifier).addVehicle(newVehicle);
+    final success = await ref.read(vehiclesProvider.notifier).addVehicle(newVehicle);
 
     if (!mounted) return;
     setState(() => _isPublishing = false);
+
+    if (!success) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Failed to publish vehicle. Please try again.'),
+        ),
+      );
+      return;
+    }
 
     _showSuccessDialog(newVehicle);
   }

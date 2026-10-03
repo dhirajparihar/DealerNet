@@ -3,6 +3,7 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 import '../../dealer/domain/dealer.dart';
 import '../../vehicles/data/mock_data.dart';
 import '../../../core/network/supabase_config.dart';
+import 'package:flutter/foundation.dart';
 
 enum AuthStatus {
   unauthenticated,
@@ -76,58 +77,284 @@ class AuthNotifier extends StateNotifier<AuthState> {
       await _fetchDealerProfile(session.user.id, session.user.phone ?? '');
     }
 
-    client.auth.onAuthStateChange.listen((data) {
-      // Don't let the listener interfere while we are actively doing sendOtp/verifyOtp or in otpSent state
-      if (_isAuthFlowInProgress || state.status == AuthStatus.otpSent) return;
+    client.auth.onAuthStateChange.listen((data) async {
+      if (_isAuthFlowInProgress || state.status == AuthStatus.otpSent) {
+        return;
+      }
 
       final event = data.event;
+
       if (event == AuthChangeEvent.signedOut) {
         if (mounted) {
-          state = const AuthState(status: AuthStatus.unauthenticated);
+          state = const AuthState(
+            status: AuthStatus.unauthenticated,
+          );
         }
-      } else if (event == AuthChangeEvent.signedIn && data.session != null) {
-        // A new sign-in happened (e.g. from verifyOTP succeeding).
-        // Only auto-fetch profile if we are NOT already in an explicit flow.
-        _fetchDealerProfile(
-          data.session!.user.id,
-          data.session!.user.phone ?? '',
+        return;
+      }
+
+      if (event == AuthChangeEvent.signedIn && data.session != null) {
+        final user = data.session!.user;
+
+        await _fetchDealerProfile(
+          user.id,
+          user.phone ?? '',
         );
       }
     });
   }
 
   Future<void> _fetchDealerProfile(String userId, String phone) async {
-    final client = _client;
-    if (client == null) return;
-    try {
-      final response = await client.from('dealers').select().eq('id', userId).maybeSingle();
-      if (response != null && mounted) {
-        final dealer = Dealer(
-          id: response['id'],
-          businessName: response['business_name'],
-          contactName: response['contact_name'],
-          phone: response['phone'],
-          whatsappPhone: response['whatsapp_phone'],
-          city: response['city'] ?? 'Indore',
-          area: response['area'] ?? '',
-          logoUrl: response['logo_url'],
-          verificationStatus: response['verification_status'] == 'verified'
-              ? VerificationStatus.verified
-              : (response['verification_status'] == 'pending' ? VerificationStatus.pending : VerificationStatus.mobileVerified),
-          isActive: response['is_active'] ?? true,
-          activeStockCount: response['active_stock_count'] ?? 0,
-          createdAt: DateTime.parse(response['created_at']),
-        );
-        state = state.copyWith(status: AuthStatus.authenticated, currentDealer: dealer, phoneNumber: phone);
-      } else if (mounted) {
-        state = state.copyWith(status: AuthStatus.onboardingRequired, phoneNumber: phone);
-      }
-    } catch (e) {
-      if (mounted) {
-        state = state.copyWith(status: AuthStatus.unauthenticated, errorMessage: e.toString());
-      }
+  final client = _client;
+
+  if (client == null) return;
+
+  try {
+    final response = await client
+        .from('dealers')
+        .select()
+        .eq('auth_user_id', userId)
+        .maybeSingle();
+
+    if (response != null && mounted) {
+      final dealer = Dealer(
+        // This is dealers.id, NOT auth.users.id
+        id: response['id'] as String,
+
+        businessName: response['business_name'] as String,
+        contactName: response['contact_name'] as String,
+        phone: response['phone'] as String,
+        whatsappPhone:
+            response['whatsapp_phone'] as String? ?? response['phone'] as String,
+
+        // Your current DB has city_id, not a city text column.
+        city: 'Indore',
+
+        area: response['area'] as String,
+
+        logoUrl: response['logo_url'] as String?,
+
+        verificationStatus:
+            response['verification_status'] == 'verified'
+                ? VerificationStatus.verified
+                : response['verification_status'] == 'pending'
+                    ? VerificationStatus.pending
+                    : VerificationStatus.mobileVerified,
+
+        isActive: response['is_active'] as bool? ?? true,
+
+        // Your current DB doesn't have active_stock_count.
+        activeStockCount: 0,
+
+        createdAt: DateTime.parse(
+          response['created_at'] as String,
+        ),
+      );
+
+      state = state.copyWith(
+        status: AuthStatus.authenticated,
+        currentDealer: dealer,
+
+        // Use dealer phone because our Auth user uses email.
+        phoneNumber: response['phone'] as String,
+      );
+    } else if (mounted) {
+      state = state.copyWith(
+        status: AuthStatus.onboardingRequired,
+        phoneNumber: phone,
+      );
+    }
+  } catch (e) {
+    debugPrint('❌ Failed to fetch dealer profile: $e');
+
+    if (mounted) {
+      state = state.copyWith(
+        status: AuthStatus.unauthenticated,
+        errorMessage: e.toString(),
+      );
     }
   }
+}
+
+  Future<bool> loginWithEmail({
+    required String email,
+    required String password,
+  }) async {
+    final client = _client;
+
+    if (client == null) {
+      state = state.copyWith(
+        status: AuthStatus.authenticated,
+        currentDealer: MockData.currentDealer,
+      );
+      return true;
+    }
+
+    state = state.copyWith(
+      isLoading: true,
+      errorMessage: null,
+    );
+
+    try {
+      final response = await client.auth.signInWithPassword(
+        email: email.trim(),
+        password: password,
+      );
+
+      final user = response.user;
+
+      if (user == null) {
+        state = state.copyWith(
+          isLoading: false,
+          errorMessage: 'Login failed.',
+        );
+        return false;
+      }
+
+      debugPrint('✅ Auth login successful');
+      debugPrint('Auth User ID: ${user.id}');
+
+      await _fetchDealerProfile(
+        user.id,
+        '',
+      );
+
+      if (state.status == AuthStatus.authenticated) {
+        debugPrint(
+          '✅ Dealer loaded: ${state.currentDealer?.businessName}',
+        );
+        debugPrint(
+          'Dealer ID: ${state.currentDealer?.id}',
+        );
+
+        state = state.copyWith(isLoading: false);
+
+        return true;
+      }
+
+      state = state.copyWith(
+        isLoading: false,
+        errorMessage: 'No dealer profile found for this account.',
+      );
+
+      return false;
+    } catch (e) {
+      debugPrint('❌ Login failed: $e');
+
+      state = state.copyWith(
+        isLoading: false,
+        errorMessage: e.toString(),
+      );
+
+      return false;
+    }
+  }
+  Future<bool> signUp({
+  required String email,
+  required String password,
+  required String businessName,
+  required String contactName,
+  required String phone,
+}) async {
+  final client = _client;
+
+  if (client == null) {
+    state = state.copyWith(
+      status: AuthStatus.authenticated,
+      isLoading: false,
+    );
+    return true;
+  }
+
+  state = state.copyWith(
+    isLoading: true,
+    errorMessage: null,
+  );
+
+  try {
+    // 1. Create Supabase Auth user
+    final response = await client.auth.signUp(
+      email: email.trim(),
+      password: password,
+    );
+
+    final user = response.user;
+
+    if (user == null) {
+      state = state.copyWith(
+        isLoading: false,
+        errorMessage: 'Signup failed.',
+      );
+      return false;
+    }
+
+    debugPrint('✅ Auth signup successful');
+    debugPrint('Auth User ID: ${user.id}');
+
+    // 2. Create dealer profile immediately
+    final dealerResponse = await client
+        .from('dealers')
+        .insert({
+          'auth_user_id': user.id,
+          'business_name': businessName.trim(),
+          'contact_name': contactName.trim(),
+          'phone': phone.trim(),
+          'whatsapp_phone': phone.trim(),
+          'area': 'Not specified',
+          'verification_status': 'verified',
+          'is_active': true,
+        })
+        .select()
+        .single();
+
+    debugPrint('✅ Dealer profile created');
+    debugPrint('Dealer ID: ${dealerResponse['id']}');
+
+    // 3. Load dealer into AuthState
+    await _fetchDealerProfile(
+      user.id,
+      phone.trim(),
+    );
+
+    if (state.status == AuthStatus.authenticated) {
+      state = state.copyWith(
+        isLoading: false,
+      );
+
+      debugPrint(
+        '✅ Signup completed: ${state.currentDealer?.businessName}',
+      );
+
+      return true;
+    }
+
+    state = state.copyWith(
+      isLoading: false,
+      errorMessage: 'Dealer profile could not be loaded.',
+    );
+
+    return false;
+  } on AuthException catch (e) {
+    debugPrint('❌ Auth signup failed: ${e.message}');
+
+    state = state.copyWith(
+      isLoading: false,
+      errorMessage: e.message,
+    );
+
+    return false;
+  } catch (e) {
+    debugPrint('❌ Signup failed: $e');
+
+    state = state.copyWith(
+      isLoading: false,
+      errorMessage: e.toString(),
+    );
+
+    return false;
+  }
+}
+
 
   Future<bool> sendOtp(String phone) async {
     _isAuthFlowInProgress = true;

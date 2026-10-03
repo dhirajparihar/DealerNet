@@ -14,23 +14,40 @@ class MobileLoginView extends ConsumerStatefulWidget {
 }
 
 class _MobileLoginViewState extends ConsumerState<MobileLoginView> {
-  final TextEditingController _phoneController = TextEditingController(text: '9826012345');
+  //final TextEditingController _phoneController = TextEditingController(text: '9826012345');
+  final TextEditingController _emailController =
+    TextEditingController();
+
+final TextEditingController _passwordController =
+    TextEditingController();
+
   final _formKey = GlobalKey<FormState>();
 
   @override
   void dispose() {
-    _phoneController.dispose();
+    _emailController.dispose();
+    _passwordController.dispose();
+    //_phoneController.dispose();
     super.dispose();
   }
 
-  void _onContinue() async {
-    if (_formKey.currentState?.validate() ?? false) {
-      final success = await ref.read(authProvider.notifier).sendOtp(_phoneController.text);
-      if (success && mounted) {
-        context.go('/auth/otp');
-      }
-    }
+Future<void> _onContinue() async {
+  if (!(_formKey.currentState?.validate() ?? false)) {
+    return;
   }
+
+  final success =
+      await ref.read(authProvider.notifier).loginWithEmail(
+            email: _emailController.text,
+            password: _passwordController.text,
+          );
+
+  debugPrint('LOGIN RESULT: $success');
+
+  if (success && mounted) {
+    context.go('/home');
+  }
+}
 
   @override
   Widget build(BuildContext context) {
@@ -75,7 +92,7 @@ class _MobileLoginViewState extends ConsumerState<MobileLoginView> {
                 ),
                 const SizedBox(height: 28),
                 const Text(
-                  'Enter your Mobile Number',
+                  'Dealer Login',
                   style: TextStyle(
                     fontSize: 24,
                     fontWeight: FontWeight.w800,
@@ -84,7 +101,7 @@ class _MobileLoginViewState extends ConsumerState<MobileLoginView> {
                 ),
                 const SizedBox(height: 8),
                 const Text(
-                  'We will send a 6-digit one-time verification password to confirm your identity.',
+                  'Use the login credentials provided during dealer onboarding.',
                   style: TextStyle(
                     fontSize: 14,
                     color: AppColors.textSecondary,
@@ -95,46 +112,41 @@ class _MobileLoginViewState extends ConsumerState<MobileLoginView> {
 
                 // Mobile Input Field with +91 Prefix
                 TextFormField(
-                  controller: _phoneController,
-                  keyboardType: TextInputType.phone,
-                  inputFormatters: [
-                    FilteringTextInputFormatter.digitsOnly,
-                    LengthLimitingTextInputFormatter(10),
-                  ],
-                  style: const TextStyle(
-                    fontSize: 18,
-                    fontWeight: FontWeight.w700,
-                    letterSpacing: 1.2,
-                  ),
-                  decoration: InputDecoration(
-                    labelText: 'Mobile Number',
-                    prefixIcon: Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
-                      margin: const EdgeInsets.only(right: 8),
-                      child: const Row(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          Text('🇮🇳', style: TextStyle(fontSize: 20)),
-                          SizedBox(width: 6),
-                          Text(
-                            '+91',
-                            style: TextStyle(
-                              fontSize: 17,
-                              fontWeight: FontWeight.w700,
-                              color: AppColors.textPrimary,
-                            ),
-                          ),
-                          SizedBox(width: 8),
-                          VerticalDivider(width: 1, thickness: 1, color: AppColors.border),
-                        ],
-                      ),
-                    ),
-                    hintText: '98260 12345',
+                  controller: _emailController,
+                  keyboardType: TextInputType.emailAddress,
+                  decoration: const InputDecoration(
+                    labelText: 'Email',
+                    hintText: 'dealer@example.com',
+                    prefixIcon: Icon(Icons.email_outlined),
                   ),
                   validator: (value) {
-                    if (value == null || value.trim().length != 10) {
-                      return 'Please enter a valid 10-digit mobile number';
+                    if (value == null || value.trim().isEmpty) {
+                      return 'Please enter your email';
                     }
+
+                    if (!value.contains('@')) {
+                      return 'Please enter a valid email';
+                    }
+
+                    return null;
+                  },
+                ),
+
+                const SizedBox(height: 16),
+
+                TextFormField(
+                  controller: _passwordController,
+                  obscureText: true,
+                  decoration: const InputDecoration(
+                    labelText: 'Password',
+                    hintText: 'Enter your password',
+                    prefixIcon: Icon(Icons.lock_outline),
+                  ),
+                  validator: (value) {
+                    if (value == null || value.isEmpty) {
+                      return 'Please enter your password';
+                    }
+
                     return null;
                   },
                 ),
@@ -159,9 +171,21 @@ class _MobileLoginViewState extends ConsumerState<MobileLoginView> {
                 ],
 
                 AppButton(
-                  label: 'Get Verification Code',
+                  label: 'Login',
                   isLoading: authState.isLoading,
                   onPressed: _onContinue,
+                ),
+                const SizedBox(height: 12),
+
+                Center(
+                  child: TextButton(
+                    onPressed: () {
+                      context.go('/auth/signup');
+                    },
+                    child: const Text(
+                      "Don't have an account? Sign Up",
+                    ),
+                  ),
                 ),
                 const SizedBox(height: 16),
                 const Center(

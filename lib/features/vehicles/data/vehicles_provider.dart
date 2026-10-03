@@ -3,6 +3,7 @@ import '../domain/vehicle.dart';
 import 'mock_data.dart';
 import 'supabase_vehicle_repository.dart';
 import '../../auth/data/auth_repository.dart';
+import 'package:flutter/foundation.dart';
 
 enum SortOption {
   newest,
@@ -102,12 +103,28 @@ class VehiclesNotifier extends StateNotifier<List<Vehicle>> {
     }
   }
 
-  void addVehicle(Vehicle vehicle) {
-    state = [vehicle, ...state];
-    if (_supabaseRepo.isConnected) {
-      _supabaseRepo.insertVehicle(vehicle);
-    }
+Future<bool> addVehicle(Vehicle vehicle) async {
+  state = [vehicle, ...state];
+
+  if (!_supabaseRepo.isConnected) {
+    debugPrint('❌ Supabase is not connected');
+    return false;
   }
+
+  debugPrint('📤 Saving vehicle to Supabase...');
+  debugPrint('Vehicle ID: ${vehicle.id}');
+  debugPrint('Dealer ID: ${vehicle.dealerId}');
+
+  final success = await _supabaseRepo.insertVehicle(vehicle);
+
+  if (success) {
+    debugPrint('✅ Vehicle saved to Supabase');
+  } else {
+    debugPrint('❌ Vehicle NOT saved to Supabase');
+  }
+
+  return success;
+}
 
   void updateVehicle(Vehicle updated) {
     state = [
